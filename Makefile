@@ -32,3 +32,6 @@ package: clean
 	rm -rf dist/
 	rm -rf build/
 	version --plugin=wheel --skip-tag
+
+release: package
+	devpi upload --index=oxyan/testing dist/*.whl
