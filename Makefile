@@ -1,6 +1,6 @@
 .PHONY: fail-if-no-virtualenv all install dev lint test black
 
-all: install migrate collectstatic
+all: install
 
 fail-if-no-virtualenv:
 ifndef VIRTUAL_ENV # check for a virtualenv in development environment
@@ -10,12 +10,12 @@ endif
 endif
 
 ifndef PIP_INDEX_URL
-PIP_INDEX_URL=https://pypi.uwkm.nl/oxyan/oscar/+simple/
+PIP_INDEX_URL=https://pypi.uwkm.nl/oxyan/testing/+simple/
 endif
 
 
 install: fail-if-no-virtualenv
-	pip install -e .
+	PIP_INDEX_URL=${PIP_INDEX_URL} pip install -e .[dev] --upgrade --upgrade-strategy=eager --pre
 	pip install -r tests/requirements/py3.txt
 
 test: fail-if-no-virtualenv
@@ -31,4 +31,4 @@ clean: ## Remove files not in source control
 package: clean
 	rm -rf dist/
 	rm -rf build/
-	pip wheel .
+	version --plugin=wheel --skip-tag
