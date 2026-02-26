@@ -102,9 +102,9 @@ def response_for_exception(request, exc):
         security_logger = logging.getLogger('django.security.%s' % exc.__class__.__name__)
         log_response(
             str(exc),
-            exception=exc,
             request=request,
             response=response,
+            exc_info=sys.exc_info(),
             level='error',
             logger=security_logger,
         )
