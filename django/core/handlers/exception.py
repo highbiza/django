@@ -104,7 +104,6 @@ def response_for_exception(request, exc):
             str(exc),
             request=request,
             response=response,
-            exc_info=sys.exc_info(),
             level='error',
             logger=security_logger,
         )
