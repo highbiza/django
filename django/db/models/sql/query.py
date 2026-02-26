@@ -1466,6 +1466,7 @@ class Query(BaseExpression):
         return target_clause
 
     def add_filtered_relation(self, filtered_relation, alias):
+        self.check_alias(alias)
         filtered_relation.alias = alias
         lookups = dict(get_children_from_q(filtered_relation.condition))
         relation_lookup_parts, relation_field_parts, _ = self.solve_lookup_type(filtered_relation.relation_name)
@@ -2228,6 +2229,8 @@ class Query(BaseExpression):
         self.clear_select_fields()
 
         if fields:
+            for field in fields:
+                self.check_alias(field)
             field_names = []
             extra_names = []
             annotation_names = []

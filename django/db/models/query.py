@@ -31,6 +31,8 @@ MAX_GET_RESULTS = 21
 # The maximum number of items to display in a QuerySet.__repr__
 REPR_OUTPUT_SIZE = 20
 
+PROHIBITED_FILTER_KWARGS = frozenset(["_connector", "_negated"])
+
 
 class BaseIterable:
     def __init__(self, queryset, chunked_fetch=False, chunk_size=GET_ITERATOR_CHUNK_SIZE):
@@ -962,6 +964,9 @@ class QuerySet:
         return clone
 
     def _filter_or_exclude_inplace(self, negate, args, kwargs):
+        if invalid_kwargs := PROHIBITED_FILTER_KWARGS.intersection(kwargs):
+            invalid_kwargs_str = ", ".join("'%s'" % k for k in sorted(invalid_kwargs))
+            raise TypeError("The following kwargs are invalid: %s" % invalid_kwargs_str)
         if negate:
             self._query.add_q(~Q(*args, **kwargs))
         else:

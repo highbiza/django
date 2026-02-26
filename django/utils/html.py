@@ -8,12 +8,18 @@ from urllib.parse import (
     parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit,
 )
 
+from django.core.exceptions import SuspiciousOperation
 from django.utils.encoding import punycode
 from django.utils.functional import Promise, keep_lazy, keep_lazy_text
-from django.utils.http import RFC3986_GENDELIMS, RFC3986_SUBDELIMS
+from django.utils.http import MAX_URL_LENGTH, RFC3986_GENDELIMS, RFC3986_SUBDELIMS
 from django.utils.regex_helper import _lazy_re_compile
 from django.utils.safestring import SafeData, SafeString, mark_safe
 from django.utils.text import normalize_newlines
+
+MAX_STRIP_TAGS_DEPTH = 50
+
+# HTML tag that opens but has no closing ">" after 1k+ chars.
+long_open_tag_without_closing_re = _lazy_re_compile(r'<[a-zA-Z][^>]{1000,}')
 
 # Configuration for urlize() function.
 TRAILING_PUNCTUATION_CHARS = '.,:;!'
@@ -179,15 +185,22 @@ def _strip_once(value):
 @keep_lazy_text
 def strip_tags(value):
     """Return the given HTML with all tags stripped."""
-    # Note: in typical case this loop executes _strip_once once. Loop condition
-    # is redundant, but helps to reduce number of executions of _strip_once.
     value = str(value)
+    for long_open_tag in long_open_tag_without_closing_re.finditer(value):
+        if long_open_tag.group().count('<') >= MAX_STRIP_TAGS_DEPTH:
+            raise SuspiciousOperation
+    # Note: in typical case this loop executes _strip_once twice (the second
+    # execution does not remove any more tags).
+    strip_tags_depth = 0
     while '<' in value and '>' in value:
+        if strip_tags_depth >= MAX_STRIP_TAGS_DEPTH:
+            raise SuspiciousOperation
         new_value = _strip_once(value)
         if value.count('<') == new_value.count('<'):
             # _strip_once wasn't able to detect more tags.
             break
         value = new_value
+        strip_tags_depth += 1
     return value
 
 
@@ -298,6 +311,10 @@ def urlize(text, trim_url_limit=None, nofollow=False, autoescape=False):
         except ValueError:
             # value contains more than one @.
             return False
+        # Max length for domain name labels is 63 characters per RFC 1034.
+        # Helps to avoid ReDoS vectors in the domain part.
+        if len(p2) > 63:
+            return False
         # Dot must be in p2 (e.g. example.com)
         if '.' not in p2 or p2.startswith('.'):
             return False
@@ -316,9 +333,9 @@ def urlize(text, trim_url_limit=None, nofollow=False, autoescape=False):
             # Make URL we want to point to.
             url = None
             nofollow_attr = ' rel="nofollow"' if nofollow else ''
-            if simple_url_re.match(middle):
+            if len(middle) <= MAX_URL_LENGTH and simple_url_re.match(middle):
                 url = smart_urlquote(html.unescape(middle))
-            elif simple_url_2_re.match(middle):
+            elif len(middle) <= MAX_URL_LENGTH and simple_url_2_re.match(middle):
                 url = smart_urlquote('http://%s' % html.unescape(middle))
             elif ':' not in middle and is_email_simple(middle):
                 local, domain = middle.rsplit('@', 1)
