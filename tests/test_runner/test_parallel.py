@@ -3,7 +3,7 @@ import unittest
 
 from django.test import SimpleTestCase
 from django.test.runner import RemoteTestResult
-from django.utils.version import PY37
+from django.utils.version import PY37, PY311, PY312
 
 try:
     import tblib
@@ -84,11 +84,21 @@ class RemoteTestResultTest(SimpleTestCase):
         subtest_test.run(result=result)
 
         events = result.events
-        self.assertEqual(len(events), 4)
+        # addDuration added in Python 3.12.
+        if PY312:
+            self.assertEqual(len(events), 5)
+        else:
+            self.assertEqual(len(events), 4)
+        self.assertIs(result.wasSuccessful(), False)
 
         event = events[1]
         self.assertEqual(event[0], 'addSubTest')
-        self.assertEqual(str(event[2]), 'dummy_test (test_runner.test_parallel.SampleFailingSubtest) (index=0)')
+        self.assertEqual(
+            str(event[2]),
+            'dummy_test (test_runner.test_parallel.SampleFailingSubtest%s) (index=0)'
+            # Python 3.11 uses fully qualified test name in the output.
+            % ('.dummy_test' if PY311 else ''),
+        )
         trailing_comma = '' if PY37 else ','
         self.assertEqual(repr(event[3][1]), "AssertionError('0 != 1'%s)" % trailing_comma)
 
