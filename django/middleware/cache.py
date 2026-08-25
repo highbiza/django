@@ -89,7 +89,7 @@ class UpdateCacheMiddleware(MiddlewareMixin):
             return response
 
         # Don't cache a response with 'Cache-Control: private'
-        if 'private' in response.get('Cache-Control', ()):
+        if 'private' in response.get('Cache-Control', '').lower():
             return response
 
         # Page timeout takes precedence over the "max-age" and the default

@@ -2461,6 +2461,28 @@ class CacheMiddlewareTest(SimpleTestCase):
         response = view_with_private_cache(request, '2')
         self.assertEqual(response.content, b'Hello World 2')
 
+    def test_cache_control_private_case_insensitive_not_cached(self):
+        """
+        'Cache-Control' directives are case-insensitive, so a response marked
+        'Private' or 'PRIVATE' must not be cached either (CVE-2026-8404).
+        """
+        for cc in ('private', 'Private', 'PRIVATE', 'max-age=3600, Private'):
+            with self.subTest(cache_control=cc):
+                cache.clear()
+
+                # Cannot use @cache_control() here as it lowercases directives.
+                @cache_page(3)
+                def view(request, value):
+                    return HttpResponse(
+                        'Hello World %s' % value, headers={'Cache-Control': cc},
+                    )
+
+                request = self.factory.get('/view/')
+                response = view(request, '1')
+                self.assertEqual(response.content, b'Hello World 1')
+                response = view(request, '2')
+                self.assertEqual(response.content, b'Hello World 2')
+
     def test_sensitive_cookie_not_cached(self):
         """
         Django must prevent caching of responses that set a user-specific (and
