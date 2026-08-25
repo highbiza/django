@@ -41,7 +41,8 @@ from django.test import (
 from django.test.signals import setting_changed
 from django.utils import timezone, translation
 from django.utils.cache import (
-    get_cache_key, learn_cache_key, patch_cache_control, patch_vary_headers,
+    get_cache_key, has_vary_header, learn_cache_key, patch_cache_control,
+    patch_vary_headers,
 )
 from django.utils.deprecation import RemovedInDjango41Warning
 from django.views.decorators.cache import cache_control, cache_page
@@ -1839,6 +1840,31 @@ class CacheUtils(SimpleTestCase):
                 patch_vary_headers(response, newheaders)
                 self.assertEqual(response.headers['Vary'], resulting_vary)
 
+    def test_has_vary_header(self):
+        cases = (
+            # Vary header, queried header, expected result.
+            (None, 'Cookie', False),
+            ('Cookie', 'Cookie', True),
+            ('cookie', 'Cookie', True),
+            ('Cookie', 'cookie', True),
+            ('Cookie', 'Accept-Encoding', False),
+            ('Cookie, Accept-Encoding', 'Accept-Encoding', True),
+            # Leading/trailing whitespace must be ignored (CVE-2026-48587).
+            ('Cookie ', 'Cookie', True),
+            (' Cookie', 'Cookie', True),
+            ('  Cookie  ', 'Cookie', True),
+            ('Accept-Encoding, Cookie ', 'Cookie', True),
+            ('* ', '*', True),
+            (' *', '*', True),
+            ('Cookie , *', '*', True),
+        )
+        for vary, header_query, expected in cases:
+            with self.subTest(vary=vary, header_query=header_query):
+                response = HttpResponse()
+                if vary is not None:
+                    response.headers['Vary'] = vary
+                self.assertIs(has_vary_header(response, header_query), expected)
+
     def test_get_cache_key(self):
         request = self.factory.get(self.path)
         response = HttpResponse()
@@ -2210,6 +2236,15 @@ def csrf_view(request):
     return HttpResponse(csrf(request)['csrf_token'])
 
 
+def padded_vary_cookie_view(request):
+    response = HttpResponse('Hello World')
+    response.set_cookie('sessionid', 'user-specific-value')
+    # Vary values may legitimately carry optional whitespace padding per
+    # RFC 7230, Section 7.
+    response.headers['Vary'] = 'Cookie '
+    return response
+
+
 @override_settings(
     CACHE_MIDDLEWARE_ALIAS='other',
     CACHE_MIDDLEWARE_KEY_PREFIX='middlewareprefix',
@@ -2440,6 +2475,21 @@ class CacheMiddlewareTest(SimpleTestCase):
         cache_middleware(request)
 
         # Inserting a CSRF cookie in a cookie-less request prevented caching.
+        self.assertIsNone(cache_middleware.process_request(request))
+
+    def test_sensitive_cookie_with_padded_vary_not_cached(self):
+        """
+        Whitespace padding in the Vary header must not defeat the check that
+        prevents caching of responses setting a user-specific cookie
+        (CVE-2026-48587).
+        """
+        request = self.factory.get('/view/')
+        cache_middleware = CacheMiddleware(padded_vary_cookie_view)
+
+        self.assertIsNone(cache_middleware.process_request(request))
+        cache_middleware(request)
+
+        # The padded "Vary: Cookie " still prevented caching.
         self.assertIsNone(cache_middleware.process_request(request))
 
     def test_304_response_has_http_caching_headers_but_not_cached(self):
